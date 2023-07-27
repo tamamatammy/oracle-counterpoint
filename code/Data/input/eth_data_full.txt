@@ -1,0 +1,72 @@
+-------------------------------------------------------------------------------------------------
+# eth hourly data
+-------------------------------------------------------------------------------------------------
+with eth_blocks as (
+select 
+ FORMAT_TIMESTAMP("%Y-%m-%d %H", timestamp) date_time
+ ,count(distinct number) as eth_n_blocks
+ ,sum(difficulty) as eth_difficulty_sum
+ ,sum(gas_limit) as eth_gaslimit_sum
+ ,sum(gas_used) as eth_gasused_sum
+ ,sum(pow(gas_used,2)) as eth_gasused_square_sum
+
+ ,sum(size) as eth_blocksize_sum
+
+from
+`bigquery-public-data.crypto_ethereum.blocks`
+ where timestamp >= 'start_date_python'
+ group by FORMAT_TIMESTAMP("%Y-%m-%d %H", timestamp)
+)
+
+,eth_ethersupply as (
+  select 
+   FORMAT_TIMESTAMP("%Y-%m-%d %H", block_timestamp) date_time
+   ,sum(value) value
+  from `bigquery-public-data.crypto_ethereum.traces`
+  where trace_type in ('genesis', 'reward')
+  group by FORMAT_TIMESTAMP("%Y-%m-%d %H", block_timestamp)
+  --LIMIT 1000
+)
+
+,eth_transactions  as (select 
+
+FORMAT_TIMESTAMP("%Y-%m-%d %H", block_timestamp) as date_time
+,count('hash') as eth_n_transactions
+,sum(gas_price) as eth_gasprice_sum
+,sum(power(gas_price,2)) as eth_gasprice_square_sum
+,sum(receipt_gas_used/b.gas_used * gas_price) as eth_weighted_gasprice_sum
+,sum(receipt_gas_used/b.gas_used * power(gas_price,2)) as eth_weighted_gasprice_square_sum
+,count(distinct from_address) as eth_n_unique_from_address
+,count(distinct to_address) as eth_n_unique_to_address
+
+from 
+
+`bigquery-public-data.crypto_ethereum.transactions` t 
+join (select number, gas_used from `bigquery-public-data.crypto_ethereum.blocks`) b on t.block_number = b.number
+
+group by FORMAT_TIMESTAMP("%Y-%m-%d %H", block_timestamp)
+
+)
+
+#select * from eth_transactions order by date_time desc limit 100
+
+
+-------------------------------------------------------------------------------------------------
+select 
+  b.*
+  ,sum(value) OVER (ORDER BY s.date_time) AS eth_ethersupply_sum #/ power(10, 18)
+  ,t.eth_n_transactions
+  ,t.eth_gasprice_sum
+  ,t.eth_gasprice_square_sum
+  ,t.eth_weighted_gasprice_sum
+  ,t.eth_weighted_gasprice_square_sum
+  ,t.eth_n_unique_from_address
+  ,t.eth_n_unique_to_address
+  
+from eth_blocks b 
+join eth_transactions t on b.date_time =t.date_time
+join eth_ethersupply s on b.date_time = s.date_time
+--where b.date_time >'start_date_python'
+order by b.date_time desc
+--Limit 1
+

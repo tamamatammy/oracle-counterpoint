@@ -1,0 +1,69 @@
+with inputs_unnest_1 as(select 
+block_timestamp
+,block_number
+,`hash`
+,fee
+,ip.addresses as address_input_1
+,op.addresses as address_output_1
+
+from  `bigquery-public-data.crypto_bitcoin.transactions`,unnest(inputs) as ip, unnest(outputs) as op
+)
+
+
+,fee as (
+select 
+block_number
+,sum(fee) as fee
+,sum(fee/t.size) as fee_unit
+,sum(pow(fee/t.size,2)) as fee_unit_square
+,sum(t.size/b.size*(fee/t.size)) as fee_unit_weitghted_sum
+,sum(t.size/b.size*pow(fee/t.size,2)) as fee_unit_square_weitghted_sum
+from  `bigquery-public-data.crypto_bitcoin.transactions` t
+join `bigquery-public-data.crypto_bitcoin.blocks` b on b.number = t.block_number
+group by t.block_number
+)
+
+,miner_reward as (select block_number, output_value from  `bigquery-public-data.crypto_bitcoin.transactions` where is_coinbase = True)
+-----------------------------------------------------------------------------------------------------------
+select 
+block_timestamp
+,add.block_number
+,f.fee as btc_fee_sum
+,f.fee_unit as btc_fee_unit_sum
+,f.fee_unit_square as btc_fee_unit_square_sum
+,f.fee_unit_weitghted_sum as btc_fee_unit_weighted_sum
+,f.fee_unit_square_weitghted_sum as btc_fee_unit_square_weightd_sum
+,m.output_value as btc_miner_reward
+,count(distinct add.`hash`) as btc_n_transactions
+,count(distinct address_input_2) as btc_n_unique_inptput_address
+,count(distinct address_output_2) as btc_n_unique_output_address
+,b.size as btc_block_size
+,b.bits as btc_block_bits
+,b.nonce as btc_block_nonce
+
+from inputs_unnest_1 as add, unnest(address_input_1) as address_input_2, unnest(address_output_1) as address_output_2
+join fee as f on add.block_number = f.block_number
+join miner_reward as m on add.block_number = m.block_number
+join `bigquery-public-data.crypto_bitcoin.blocks` as b on b.timestamp = add.block_timestamp and b.number = add.block_number
+where 
+
+add.block_timestamp > 'start_date_python'
+group by 
+add.block_timestamp
+,add.block_number
+,f.fee
+,f.fee_unit
+,fee_unit_square
+,fee_unit_weitghted_sum
+,fee_unit_square_weitghted_sum
+,m.output_value
+,b.size 
+,b.bits 
+,b.nonce 
+
+order by block_timestamp desc
+
+
+
+
+
